@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fund Performance Dashboard</title>
+<meta name="description" content="Live Capital Group ETF performance vs peer benchmarks.">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: linear-gradient(135deg, #0d0d1a 0%, #111827 55%, #0f172a 100%);
+  min-height: 100vh;
+  color: #e2e8f0;
+  padding: 1.5rem;
+}
+
+/* ─ Header ─ */
+.header {
+  display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.5rem;
+}
+.header h1 {
+  font-size: 1.35rem; font-weight: 800; letter-spacing: 0.4px;
+  background: linear-gradient(90deg, #60a5fa, #a78bfa);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.header-right { display: flex; align-items: center; gap: 0.75rem; }
+.updated { font-size: 0.76rem; color: #475569; }
+.refresh-btn {
+  background: rgba(96,165,250,0.12); border: 1px solid rgba(96,165,250,0.3);
+  color: #60a5fa; padding: 0.4rem 1rem; border-radius: 8px;
+  cursor: pointer; font-size: 0.82rem; font-weight: 600; transition: background 0.18s;
+}
+.refresh-btn:hover:not(:disabled) { background: rgba(96,165,250,0.22); }
+.refresh-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ─ Table wrapper ─ */
+.table-wrap {
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.09);
+  overflow: hidden;
+  background: rgba(255,255,255,0.05);
+  backdrop-filter: blur(14px);
+}
+.table-scroll { overflow-x: auto; }
+
+/* ─ Table ─ */
+.tbl { width: 100%; border-collapse: collapse; min-width: 680px; }
+
+.tbl thead th {
+  font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+  color: #475569; padding: 0.75rem 1.2rem;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  white-space: nowrap;
+}
+.tbl thead th:first-child { text-align: left; min-width: 220px; }
+.tbl thead th:not(:first-child) { text-align: center; min-width: 100px; }
+
+.tbl tbody tr { transition: background 0.12s; }
+.tbl tbody tr:hover td { background: rgba(255,255,255,0.03); }
+.tbl tbody tr:last-child td { border-bottom: none; }
+.tbl tbody td {
+  padding: 0.85rem 1.2rem;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  vertical-align: middle;
+}
+
+/* ─ Fund cell (left column) ─ */
+.fund-cell .ticker {
+  font-size: 1.25rem; font-weight: 800; color: #f8fafc; letter-spacing: 1px;
+}
+.fund-cell .fund-name { font-size: 0.72rem; color: #64748b; margin-top: 2px; }
+.fund-cell .category-pill {
+  display: inline-block; margin-top: 5px;
+  font-size: 0.62rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 0.18rem 0.5rem; border-radius: 99px;
+  background: rgba(167,139,250,0.12); border: 1px solid rgba(167,139,250,0.28); color: #a78bfa;
+}
+
+/* ─ Data cells ─ */
+.data-cell { text-align: center; }
+.ret-val {
+  font-weight: 700; font-variant-numeric: tabular-nums;
+  font-size: 0.92rem; letter-spacing: -0.01em;
+}
+.pos { color: #4ade80; }
+.neg { color: #f87171; }
+.nil { color: #475569; }
+
+.rank-line {
+  margin-top: 4px;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+}
+.rank-val { font-size: 0.71rem; color: #64748b; font-variant-numeric: tabular-nums; }
+.badge {
+  font-size: 0.58rem; font-weight: 700; padding: 0.13rem 0.32rem; border-radius: 99px;
+}
+.b-top { background: rgba(74,222,128,0.15);  color: #4ade80; }
+.b-mid { background: rgba(251,191,36,0.15);  color: #fbbf24; }
+.b-bot { background: rgba(248,113,113,0.15); color: #f87171; }
+
+/* ─ Skeleton ─ */
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position:  200% 0; }
+}
+.sk {
+  display: inline-block; border-radius: 4px;
+  background: linear-gradient(90deg,
+    rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.04) 75%);
+  background-size: 200% 100%; animation: shimmer 1.4s infinite;
+}
+
+.err-row td { text-align: center; padding: 3rem; color: #f87171; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Fund Performance Dashboard</h1>
+  <div class="header-right">
+    <span class="updated" id="upd">—</span>
+    <button class="refresh-btn" id="rbtn" onclick="load(true)">&#8635; Refresh</button>
+  </div>
+</div>
+
+<div class="table-wrap">
+  <div class="table-scroll">
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>Fund</th>
+          <th>1D</th><th>1M</th><th>YTD</th><th>1Y</th><th>3Y</th><th>5Y</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const CACHE_KEY = 'cgf_grid_v2';
+const CACHE_TTL = 14 * 60 * 1000; // slightly under the 15-min Action interval
+
+async function buildPayload(forceRefresh) {
+  if (!forceRefresh) {
+    try {
+      const raw = localStorage.getItem(CACHE_KEY);
+      if (raw) {
+        const { exp, data } = JSON.parse(raw);
+        if (Date.now() < exp) return data;
+      }
+    } catch (_) {}
+  }
+
+  const res = await fetch('data.json');
+  if (!res.ok) throw new Error(`data.json returned ${res.status}`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ exp: Date.now() + CACHE_TTL, data })); } catch (_) {}
+  return data;
+}
+
+// ── Rendering ─────────────────────────────────────────────────────────────────
+
+function fmt(val) {
+  if (val == null) return { t: "—", c: "nil" };
+  return { t: (val >= 0 ? "+" : "") + val.toFixed(2) + "%", c: val >= 0 ? "pos" : "neg" };
+}
+
+function badge(rank, total) {
+  if (!rank || !total) return "";
+  const pct = rank / total;
+  const cls = pct <= 0.33 ? "b-top" : pct <= 0.66 ? "b-mid" : "b-bot";
+  return `<span class="badge ${cls}">${Math.round(pct * 100)}th</span>`;
+}
+
+function skRow() {
+  const cells = Array.from({ length: 6 }, () => `<td class="data-cell">
+    <span class="sk" style="width:54px;height:.85em;display:block;margin:0 auto 5px"></span>
+    <span class="sk" style="width:36px;height:.65em;display:block;margin:0 auto"></span>
+  </td>`).join("");
+  return `<tr>
+    <td>
+      <div class="fund-cell">
+        <div class="sk" style="width:58px;height:1.1em;border-radius:5px;margin-bottom:5px"></div>
+        <div class="sk" style="width:160px;height:.65em;margin-bottom:6px"></div>
+        <div class="sk" style="width:72px;height:.85em;border-radius:99px"></div>
+      </div>
+    </td>${cells}</tr>`;
+}
+
+function fundRow(f) {
+  const cells = f.periods.map(p => {
+    const r = fmt(p.return);
+    const rankHtml = p.rank != null
+      ? `<div class="rank-line">
+           <span class="rank-val">${p.rank}/${p.total}</span>
+           ${badge(p.rank, p.total)}
+         </div>`
+      : `<div class="rank-line"><span class="rank-val" style="color:#334155">—</span></div>`;
+    return `<td class="data-cell">
+      <div class="ret-val ${r.c}">${r.t}</div>
+      ${rankHtml}
+    </td>`;
+  }).join("");
+
+  return `<tr>
+    <td>
+      <div class="fund-cell">
+        <div class="ticker">${f.ticker}</div>
+        <div class="fund-name">${f.name}</div>
+        <span class="category-pill">${f.category}</span>
+      </div>
+    </td>${cells}</tr>`;
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+
+async function load(forceRefresh = false) {
+  const btn   = document.getElementById("rbtn");
+  const tbody = document.getElementById("tbody");
+  btn.disabled = true;
+  btn.textContent = "Loading…";
+  tbody.innerHTML = Array.from({ length: 4 }, skRow).join("");
+  try {
+    const payload = await buildPayload(forceRefresh);
+    tbody.innerHTML = payload.funds.map(fundRow).join("");
+    document.getElementById("upd").textContent = "Updated " + payload.updated;
+  } catch (e) {
+    tbody.innerHTML = `<tr class="err-row"><td colspan="7">Failed to load: ${e.message}</td></tr>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "↻ Refresh";
+  }
+}
+
+setInterval(() => load(true), 15 * 60 * 1000);
+load();
+</script>
+</body>
+</html>
