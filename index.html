@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fund Performance Dashboard</title>
+<meta name="description" content="Live Capital Group ETF performance vs peer benchmarks.">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: linear-gradient(135deg, #0d0d1a 0%, #111827 55%, #0f172a 100%);
+  min-height: 100vh;
+  color: #e2e8f0;
+  padding: 1.5rem;
+}
+
+/* ─ Header ─ */
+.header {
+  display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.5rem;
+}
+.header h1 {
+  font-size: 1.35rem; font-weight: 800; letter-spacing: 0.4px;
+  background: linear-gradient(90deg, #60a5fa, #a78bfa);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.header-right { display: flex; align-items: center; gap: 0.75rem; }
+.updated { font-size: 0.76rem; color: #475569; }
+.refresh-btn {
+  background: rgba(96,165,250,0.12); border: 1px solid rgba(96,165,250,0.3);
+  color: #60a5fa; padding: 0.4rem 1rem; border-radius: 8px;
+  cursor: pointer; font-size: 0.82rem; font-weight: 600; transition: background 0.18s;
+}
+.refresh-btn:hover:not(:disabled) { background: rgba(96,165,250,0.22); }
+.refresh-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ─ Grid ─ */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+  gap: 1.2rem;
+}
+
+/* ─ Card ─ */
+.card {
+  background: rgba(255,255,255,0.05);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 18px; overflow: hidden;
+  transition: border-color 0.2s, transform 0.15s;
+}
+.card:hover { border-color: rgba(96,165,250,0.25); transform: translateY(-1px); }
+
+.card-header {
+  padding: 1.2rem 1.4rem 1rem;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem;
+}
+.ticker { font-size: 1.6rem; font-weight: 800; color: #f8fafc; letter-spacing: 1px; }
+.fund-name { font-size: 0.76rem; color: #64748b; margin-top: 3px; }
+.category-pill {
+  font-size: 0.66rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 0.28rem 0.6rem; border-radius: 99px; white-space: nowrap; margin-top: 3px;
+  background: rgba(167,139,250,0.12); border: 1px solid rgba(167,139,250,0.28); color: #a78bfa;
+}
+
+/* ─ Table ─ */
+.tbl { width: 100%; border-collapse: collapse; }
+.tbl thead th {
+  font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+  color: #334155; padding: 0.55rem 1.4rem;
+  border-bottom: 1px solid rgba(255,255,255,0.05); text-align: left;
+}
+.tbl thead th.r { text-align: right; }
+.tbl tbody td {
+  padding: 0.6rem 1.4rem; font-size: 0.88rem;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.tbl tbody tr:last-child td { border-bottom: none; }
+.tbl tbody tr:hover td { background: rgba(255,255,255,0.025); }
+
+.period { font-weight: 600; color: #94a3b8; }
+.ret { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.pos { color: #4ade80; }
+.neg { color: #f87171; }
+.nil { color: #334155; }
+
+.rank-cell { text-align: right; }
+.rank-wrap { display: inline-flex; align-items: center; gap: 6px; }
+.rank-val { font-variant-numeric: tabular-nums; color: #94a3b8; font-size: 0.82rem; }
+.badge {
+  font-size: 0.63rem; font-weight: 700; padding: 0.16rem 0.4rem; border-radius: 99px;
+}
+.b-top { background: rgba(74,222,128,0.15);  color: #4ade80; }
+.b-mid { background: rgba(251,191,36,0.15);  color: #fbbf24; }
+.b-bot { background: rgba(248,113,113,0.15); color: #f87171; }
+
+/* ─ Skeleton ─ */
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position:  200% 0; }
+}
+.sk {
+  display: inline-block; border-radius: 4px;
+  background: linear-gradient(90deg,
+    rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.04) 75%);
+  background-size: 200% 100%; animation: shimmer 1.4s infinite;
+}
+.err { grid-column: 1 / -1; text-align: center; padding: 3rem; color: #f87171; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Fund Performance Dashboard</h1>
+  <div class="header-right">
+    <span class="updated" id="upd">—</span>
+    <button class="refresh-btn" id="rbtn" onclick="load(true)">&#8635; Refresh</button>
+  </div>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+const FUNDS = {
+  CGDV: { name: "Capital Group Dividend Value ETF", category: "Large Value"  },
+  CGGR: { name: "Capital Group Growth ETF",         category: "Large Growth" },
+  CGUS: { name: "Capital Group Core Equity ETF",    category: "Large Blend"  },
+  CGMM: { name: "Cap Group Core Municipal Market",  category: "Muni Bond"    },
+};
+
+const PEER_GROUPS = {
+  "Large Value":  ["VTV",  "IVE",  "DVY",  "VYM",  "SCHD", "RPV",  "IWD"],
+  "Large Growth": ["VUG",  "IVW",  "SPYG", "QQQ",  "MGK",  "IWF"],
+  "Large Blend":  ["SPY",  "IVV",  "VOO",  "VV",   "SCHX", "VTI"],
+  "Muni Bond":    ["MUB",  "VTEB", "TFI",  "CMF",  "HYMB"],
+};
+
+const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
+
+// ── Yahoo Finance fetch ───────────────────────────────────────────────────────
+async function fetchYF(ticker) {
+  const url =
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}` +
+    `?interval=1d&range=6y&events=div%2Csplits`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${ticker}: HTTP ${res.status}`);
+  const j = await res.json();
+  if (j.chart?.error) throw new Error(`${ticker}: ${j.chart.error.description}`);
+  const result = j.chart?.result?.[0];
+  if (!result) return [];
+  const ts     = result.timestamp || [];
+  const prices = result.indicators?.adjclose?.[0]?.adjclose
+              || result.indicators?.quote?.[0]?.close
+              || [];
+  // return as [timestampMs, price] pairs sorted ascending
+  return ts
+    .map((t, i) => [t * 1000, prices[i]])
+    .filter(([, p]) => p != null && !isNaN(p))
+    .sort((a, b) => a[0] - b[0]);
+}
+
+async function loadTicker(ticker, forceRefresh) {
+  const key = `cgf_${ticker}`;
+  if (!forceRefresh) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const { exp, data } = JSON.parse(raw);
+        if (Date.now() < exp) return data;
+      }
+    } catch (_) {}
+  }
+  const data = await fetchYF(ticker);
+  try {
+    localStorage.setItem(key, JSON.stringify({ exp: Date.now() + CACHE_TTL, data }));
+  } catch (_) {}
+  return data;
+}
+
+// ── Return math (mirrors Python) ──────────────────────────────────────────────
+function calc1D(series) {
+  if (series.length < 2) return null;
+  const last = series[series.length - 1][1];
+  const prev = series[series.length - 2][1];
+  return +((last / prev - 1) * 100).toFixed(2);
+}
+
+function calcReturn(series, startMs, annualize, years) {
+  if (!series.length) return null;
+  const sub = series.filter(([t]) => t >= startMs);
+  if (!sub.length) return null;
+  const sp = sub[0][1];
+  const ep = series[series.length - 1][1];
+  if (!sp) return null;
+  let raw = ep / sp - 1;
+  if (annualize && years > 1) raw = Math.pow(1 + raw, 1 / years) - 1;
+  return +(raw * 100).toFixed(2);
+}
+
+function peerRank(ticker, category, retMap) {
+  const peers = PEER_GROUPS[category] || [];
+  const universe = {};
+  for (const t of [ticker, ...peers]) {
+    if (retMap[t] != null) universe[t] = retMap[t];
+  }
+  if (!(ticker in universe)) return [null, null];
+  const ranked = Object.keys(universe).sort((a, b) => universe[b] - universe[a]);
+  return [ranked.indexOf(ticker) + 1, ranked.length];
+}
+
+// ── Build payload ─────────────────────────────────────────────────────────────
+async function buildPayload(forceRefresh) {
+  const now   = Date.now();
+  const today = new Date();
+
+  const PERIODS = [
+    { name: "1D",  start: null,                                     ann: false, yrs: 1 },
+    { name: "1M",  start: now - 30  * 86400 * 1000,                 ann: false, yrs: 1 },
+    { name: "YTD", start: new Date(today.getFullYear(), 0, 1).getTime(), ann: false, yrs: 1 },
+    { name: "1Y",  start: now - 365 * 86400 * 1000,                 ann: false, yrs: 1 },
+    { name: "3Y",  start: now - 3 * 365 * 86400 * 1000,             ann: true,  yrs: 3 },
+    { name: "5Y",  start: now - 5 * 365 * 86400 * 1000,             ann: true,  yrs: 5 },
+  ];
+
+  const allTickers = [...new Set([
+    ...Object.keys(FUNDS),
+    ...Object.values(PEER_GROUPS).flat(),
+  ])];
+
+  // Fetch in batches of 8 to avoid triggering rate limits
+  const priceMap = {};
+  const BATCH = 8;
+  for (let i = 0; i < allTickers.length; i += BATCH) {
+    const batch = allTickers.slice(i, i + BATCH);
+    const results = await Promise.allSettled(
+      batch.map(t => loadTicker(t, forceRefresh))
+    );
+    batch.forEach((t, j) => {
+      priceMap[t] = results[j].status === "fulfilled" ? results[j].value : [];
+    });
+  }
+
+  // Compute all returns
+  const allReturns = {};
+  for (const p of PERIODS) allReturns[p.name] = {};
+  for (const [ticker, series] of Object.entries(priceMap)) {
+    for (const p of PERIODS) {
+      const ret = p.name === "1D"
+        ? calc1D(series)
+        : calcReturn(series, p.start, p.ann, p.yrs);
+      if (ret != null) allReturns[p.name][ticker] = ret;
+    }
+  }
+
+  // Build fund rows
+  const funds = Object.entries(FUNDS).map(([ticker, info]) => ({
+    ticker,
+    name: info.name,
+    category: info.category,
+    periods: PERIODS.map(p => {
+      const ret = allReturns[p.name][ticker];
+      const [rank, total] = peerRank(ticker, info.category, allReturns[p.name]);
+      return { period: p.name, return: ret, rank, total };
+    }),
+  }));
+
+  const d = new Date();
+  const updated = d.toLocaleString("en-US", {
+    month: "short", day: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+
+  return { funds, updated };
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+function fmt(val) {
+  if (val == null) return { t: "—", c: "nil" };
+  return { t: (val >= 0 ? "+" : "") + val.toFixed(2) + "%", c: val >= 0 ? "pos" : "neg" };
+}
+
+function badge(rank, total) {
+  if (!rank || !total) return "";
+  const pct = rank / total;
+  const cls = pct <= 0.33 ? "b-top" : pct <= 0.66 ? "b-mid" : "b-bot";
+  return `<span class="badge ${cls}">${Math.round(pct * 100)}th pct</span>`;
+}
+
+function cardHtml(f) {
+  const rows = f.periods.map(p => {
+    const r = fmt(p.return);
+    const rankHtml = p.rank != null
+      ? `<div class="rank-wrap">
+           <span class="rank-val">${p.rank}&thinsp;/&thinsp;${p.total}</span>
+           ${badge(p.rank, p.total)}
+         </div>`
+      : `<span style="color:#334155">—</span>`;
+    return `<tr>
+      <td><span class="period">${p.period}</span></td>
+      <td class="ret ${r.c}">${r.t}</td>
+      <td class="rank-cell">${rankHtml}</td>
+    </tr>`;
+  }).join("");
+
+  return `<div class="card">
+    <div class="card-header">
+      <div>
+        <div class="ticker">${f.ticker}</div>
+        <div class="fund-name">${f.name}</div>
+      </div>
+      <div class="category-pill">${f.category}</div>
+    </div>
+    <table class="tbl">
+      <thead><tr><th>Period</th><th class="r">Return</th><th class="r">Peer Rank</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+function skeleton() {
+  const rows = ["1D","1M","YTD","1Y","3Y","5Y"].map(() => `<tr>
+    <td><span class="sk" style="width:26px;height:.82em"></span></td>
+    <td class="ret"><span class="sk" style="width:60px;height:.82em"></span></td>
+    <td class="rank-cell"><span class="sk" style="width:48px;height:.82em"></span></td>
+  </tr>`).join("");
+
+  return `<div class="card">
+    <div class="card-header">
+      <div>
+        <div class="sk" style="width:78px;height:1.4em;margin-bottom:6px;border-radius:6px"></div>
+        <div class="sk" style="width:195px;height:.72em"></div>
+      </div>
+      <div class="sk" style="width:70px;height:1.1em;border-radius:99px;margin-top:4px"></div>
+    </div>
+    <table class="tbl">
+      <thead><tr><th>Period</th><th class="r">Return</th><th class="r">Peer Rank</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+// ── Main load ─────────────────────────────────────────────────────────────────
+async function load(forceRefresh = false) {
+  const btn  = document.getElementById("rbtn");
+  const grid = document.getElementById("grid");
+  btn.disabled = true;
+  btn.textContent = "Loading…";
+  grid.innerHTML = Array.from({ length: 4 }, skeleton).join("");
+  try {
+    const payload = await buildPayload(forceRefresh);
+    grid.innerHTML = payload.funds.map(cardHtml).join("");
+    document.getElementById("upd").textContent = "Updated " + payload.updated;
+  } catch (e) {
+    grid.innerHTML = `<div class="err">Failed to load data: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "↻ Refresh";
+  }
+}
+
+setInterval(() => load(true), 15 * 60 * 1000); // auto-refresh every 15 min
+load();
+</script>
+</body>
+</html>
